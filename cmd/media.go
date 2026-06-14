@@ -146,6 +146,8 @@ func runDraft(file, platform string) error {
 	switch platform {
 	case "zenn":
 		destPath = filepath.Join("articles", filepath.Base(file))
+	case "qiita":
+		destPath = filepath.Join("public", filepath.Base(file))
 	default:
 		destPath = filepath.Base(file)
 	}
