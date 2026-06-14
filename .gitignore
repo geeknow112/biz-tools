@@ -1,3 +1,5 @@
 biz-tools
+biz-tools.exe
+config.yaml
 *.exe
 .env

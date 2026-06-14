@@ -1,0 +1,12 @@
+# biz-tools config example
+# Copy to config.yaml and edit
+
+platforms:
+  zenn:
+    repo: C:\Users\youre\Documents\git_repo\zenn-devex12
+  qiita:
+    repo: C:\Users\youre\Documents\git_repo\qiita-content
+  note:
+    repo: C:\Users\youre\Documents\git_repo\note-content
+  wordpress:
+    repo: C:\Users\youre\Documents\git_repo\wordpress-content
