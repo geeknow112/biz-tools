@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -43,14 +44,19 @@ Example:
 
 var mediaPublishCmd = &cobra.Command{
 	Use:   "publish [file]",
-	Short: "Publish content to platforms",
-	Long:  `Publish approved content to specified platforms.`,
-	Args:  cobra.MinimumNArgs(1),
-	Run: func(cmd *cobra.Command, args []string) {
+	Short: "Merge draft PR to publish content",
+	Long: `Merge an approved draft PR to publish content.
+
+This command finds the draft PR for the specified file and merges it.
+The PR must be approved before merging.
+
+Example:
+  biz-tools media publish article.md -p zenn`,
+	Args: cobra.MinimumNArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
 		platform, _ := cmd.Flags().GetString("platform")
 		file := args[0]
-		fmt.Printf("Publishing %s to platform: %s\n", file, platform)
-		// TODO: Implement publishing
+		return runPublish(file, platform)
 	},
 }
 
@@ -216,4 +222,102 @@ func ghCommand(args ...string) (string, error) {
 		return string(output), fmt.Errorf("%w: %s", err, string(output))
 	}
 	return string(output), nil
+}
+
+func runPublish(file, platform string) error {
+	// 1. Load config
+	config, err := loadConfig()
+	if err != nil {
+		return err
+	}
+
+	platformConfig, ok := config.Platforms[platform]
+	if !ok {
+		return fmt.Errorf("platform '%s' not configured in config.yaml", platform)
+	}
+
+	targetRepo := platformConfig.Repo
+	if targetRepo == "" {
+		return fmt.Errorf("repo path not set for platform '%s'", platform)
+	}
+
+	// 2. Change to target repo
+	originalDir, _ := os.Getwd()
+	if err := os.Chdir(targetRepo); err != nil {
+		return fmt.Errorf("failed to change to repo: %w", err)
+	}
+	defer os.Chdir(originalDir)
+
+	// 3. Find PR for this file
+	fileName := filepath.Base(file)
+	fmt.Printf("Searching for draft PR containing '%s' on %s...\n", fileName, platform)
+
+	// Search for open PRs with the file name in title
+	prList, err := ghCommand("pr", "list", "--state", "open", "--json", "number,title,url")
+	if err != nil {
+		return fmt.Errorf("failed to list PRs: %w", err)
+	}
+
+	// Parse PR list to find matching PR
+	prNumber, prURL, err := findMatchingPR(prList, fileName, platform)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("Found PR #%s: %s\n", prNumber, prURL)
+
+	// 4. Check PR status (approved?)
+	prStatus, err := ghCommand("pr", "view", prNumber, "--json", "reviewDecision,mergeable,state")
+	if err != nil {
+		return fmt.Errorf("failed to get PR status: %w", err)
+	}
+	fmt.Printf("PR Status: %s\n", strings.TrimSpace(prStatus))
+
+	// 5. Merge the PR
+	fmt.Println("Merging PR...")
+	mergeOutput, err := ghCommand("pr", "merge", prNumber, "--squash", "--delete-branch")
+	if err != nil {
+		return fmt.Errorf("failed to merge PR: %w", err)
+	}
+
+	fmt.Printf("\n✅ Published successfully!\n")
+	fmt.Printf("   %s\n", strings.TrimSpace(mergeOutput))
+
+	return nil
+}
+
+func findMatchingPR(prListJSON, fileName, platform string) (string, string, error) {
+	// Simple JSON parsing for PR list
+	// Format: [{"number":1,"title":"...","url":"..."},...]
+	type PR struct {
+		Number int    `json:"number"`
+		Title  string `json:"title"`
+		URL    string `json:"url"`
+	}
+
+	var prs []PR
+	if err := json.Unmarshal([]byte(prListJSON), &prs); err != nil {
+		return "", "", fmt.Errorf("failed to parse PR list: %w", err)
+	}
+
+	// Search for PR matching platform and filename
+	searchTerms := []string{
+		fmt.Sprintf("[%s]", strings.ToUpper(platform)),
+		fileName,
+	}
+
+	for _, pr := range prs {
+		titleUpper := strings.ToUpper(pr.Title)
+		matchCount := 0
+		for _, term := range searchTerms {
+			if strings.Contains(titleUpper, strings.ToUpper(term)) {
+				matchCount++
+			}
+		}
+		if matchCount >= 1 && strings.Contains(pr.Title, fileName) {
+			return fmt.Sprintf("%d", pr.Number), pr.URL, nil
+		}
+	}
+
+	return "", "", fmt.Errorf("no open PR found for '%s' on %s", fileName, platform)
 }
