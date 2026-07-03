@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
@@ -13,6 +14,15 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+)
+
+// Severity levels for findings
+const (
+	SeverityCritical = "Critical"
+	SeverityHigh     = "High"
+	SeverityMedium   = "Medium"
+	SeverityLow      = "Low"
+	SeverityInfo     = "Info"
 )
 
 // ScanResult holds all scan results
@@ -179,29 +189,56 @@ func getHost(url string) string {
 }
 
 func checkSSL(url string) SSLResult {
-	result := SSLResult{Risk: "Info"}
+	result := SSLResult{Risk: SeverityInfo}
 	
 	if strings.HasPrefix(url, "http://") {
 		result.Enabled = false
-		result.Risk = "Critical"
+		result.Risk = SeverityCritical
 		return result
 	}
 	
 	host := getHost(url)
-	conn, err := tls.Dial("tcp", host+":443", &tls.Config{
+	
+	// Use context and net.Dialer for proper timeout control
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeout)*time.Second)
+	defer cancel()
+	
+	dialer := &net.Dialer{}
+	netConn, err := dialer.DialContext(ctx, "tcp", host+":443")
+	if err != nil {
+		result.Enabled = false
+		result.Risk = SeverityCritical
+		return result
+	}
+	
+	conn := tls.Client(netConn, &tls.Config{
+		ServerName:         host,
 		InsecureSkipVerify: false,
 	})
+	conn.SetDeadline(time.Now().Add(time.Duration(timeout) * time.Second))
+	
+	err = conn.Handshake()
 	if err != nil {
-		// Try with InsecureSkipVerify to get cert info even if invalid
-		conn, err = tls.Dial("tcp", host+":443", &tls.Config{
-			InsecureSkipVerify: true,
-		})
+		conn.Close()
+		// Retry with InsecureSkipVerify to get cert info even if invalid
+		netConn, err = dialer.DialContext(ctx, "tcp", host+":443")
 		if err != nil {
 			result.Enabled = false
-			result.Risk = "Critical"
+			result.Risk = SeverityCritical
 			return result
 		}
-		result.Risk = "High"
+		conn = tls.Client(netConn, &tls.Config{
+			ServerName:         host,
+			InsecureSkipVerify: true,
+		})
+		conn.SetDeadline(time.Now().Add(time.Duration(timeout) * time.Second))
+		if err = conn.Handshake(); err != nil {
+			conn.Close()
+			result.Enabled = false
+			result.Risk = SeverityCritical
+			return result
+		}
+		result.Risk = SeverityHigh
 	}
 	defer conn.Close()
 	
@@ -221,18 +258,18 @@ func checkSSL(url string) SSLResult {
 			result.Protocol = "TLS 1.2"
 		case tls.VersionTLS11:
 			result.Protocol = "TLS 1.1"
-			result.Risk = "Medium"
+			result.Risk = SeverityMedium
 		case tls.VersionTLS10:
 			result.Protocol = "TLS 1.0"
-			result.Risk = "High"
+			result.Risk = SeverityHigh
 		}
 		
 		if result.DaysRemaining < 0 {
-			result.Risk = "Critical"
+			result.Risk = SeverityCritical
 		} else if result.DaysRemaining < 14 {
-			result.Risk = "High"
+			result.Risk = SeverityHigh
 		} else if result.DaysRemaining < 30 {
-			result.Risk = "Medium"
+			result.Risk = SeverityMedium
 		}
 	}
 	
@@ -240,8 +277,8 @@ func checkSSL(url string) SSLResult {
 }
 
 func checkHeaders(url string) (HeadersResult, ServerInfoResult) {
-	headers := HeadersResult{Risk: "Info"}
-	server := ServerInfoResult{Risk: "Info"}
+	headers := HeadersResult{Risk: SeverityInfo}
+	server := ServerInfoResult{Risk: SeverityInfo}
 	
 	client := &http.Client{
 		Timeout: time.Duration(timeout) * time.Second,
@@ -288,11 +325,11 @@ func checkHeaders(url string) (HeadersResult, ServerInfoResult) {
 	// Calculate headers risk
 	missingCount := len(headers.MissingHeaders)
 	if missingCount >= 4 {
-		headers.Risk = "High"
+		headers.Risk = SeverityHigh
 	} else if missingCount >= 2 {
-		headers.Risk = "Medium"
+		headers.Risk = SeverityMedium
 	} else if missingCount >= 1 {
-		headers.Risk = "Low"
+		headers.Risk = SeverityLow
 	}
 	
 	// Check server info exposure
@@ -301,17 +338,21 @@ func checkHeaders(url string) (HeadersResult, ServerInfoResult) {
 	
 	if server.Server != "" || server.XPoweredBy != "" {
 		server.Exposed = true
-		server.Risk = "Low"
+		server.Risk = SeverityLow
 		if strings.Contains(server.Server, "/") || strings.Contains(server.XPoweredBy, "/") {
-			server.Risk = "Medium"
+			server.Risk = SeverityMedium
 		}
 	}
 	
 	return headers, server
 }
 
+// detectCMS performs simple CMS detection based on common patterns.
+// NOTE: This detection is heuristic-based and not definitive.
+// CMS operators can customize paths and remove signatures,
+// so absence of detection does not guarantee no CMS is present.
 func detectCMS(url string) CMSResult {
-	result := CMSResult{Risk: "Info"}
+	result := CMSResult{Risk: SeverityInfo}
 	
 	client := &http.Client{
 		Timeout: time.Duration(timeout) * time.Second,
@@ -329,7 +370,7 @@ func detectCMS(url string) CMSResult {
 	}
 	bodyStr := string(body)
 	
-	// WordPress detection
+	// WordPress detection (heuristic - not 100% reliable)
 	wpPatterns := []string{
 		`wp-content`,
 		`wp-includes`,
@@ -351,7 +392,7 @@ func detectCMS(url string) CMSResult {
 		if len(matches) > 1 {
 			result.Version = matches[1]
 			result.VersionExposed = true
-			result.Risk = "Medium"
+			result.Risk = SeverityMedium
 		}
 		
 		// Check generator meta tag
@@ -360,7 +401,7 @@ func detectCMS(url string) CMSResult {
 		if len(genMatches) > 1 && genMatches[1] != "" {
 			result.Version = genMatches[1]
 			result.VersionExposed = true
-			result.Risk = "Medium"
+			result.Risk = SeverityMedium
 		}
 	}
 	
@@ -390,7 +431,7 @@ func detectCMS(url string) CMSResult {
 }
 
 func checkDNS(url string) DNSResult {
-	result := DNSResult{Risk: "Info"}
+	result := DNSResult{Risk: SeverityInfo}
 	host := getHost(url)
 	
 	// Get domain (remove subdomain for DNS checks)
@@ -433,9 +474,9 @@ func checkDNS(url string) DNSResult {
 	
 	// Calculate DNS risk
 	if result.HasMX && !result.HasSPF && !result.HasDMARC {
-		result.Risk = "High"
+		result.Risk = SeverityHigh
 	} else if result.HasMX && (!result.HasSPF || !result.HasDMARC) {
-		result.Risk = "Medium"
+		result.Risk = SeverityMedium
 	}
 	
 	return result
@@ -445,7 +486,7 @@ func aggregateFindings(r *ScanResult) {
 	// SSL findings
 	if !r.SSL.Enabled {
 		r.Findings = append(r.Findings, Finding{
-			Severity:    "Critical",
+			Severity:    SeverityCritical,
 			Category:    "SSL/TLS",
 			Title:       "SSL証明書なし",
 			Description: "サイトがHTTPSで保護されていません",
@@ -454,7 +495,7 @@ func aggregateFindings(r *ScanResult) {
 	} else {
 		if r.SSL.DaysRemaining < 0 {
 			r.Findings = append(r.Findings, Finding{
-				Severity:    "Critical",
+				Severity:    SeverityCritical,
 				Category:    "SSL/TLS",
 				Title:       "SSL証明書の期限切れ",
 				Description: fmt.Sprintf("証明書は%d日前に期限切れしています", -r.SSL.DaysRemaining),
@@ -462,7 +503,7 @@ func aggregateFindings(r *ScanResult) {
 			})
 		} else if r.SSL.DaysRemaining < 14 {
 			r.Findings = append(r.Findings, Finding{
-				Severity:    "High",
+				Severity:    SeverityHigh,
 				Category:    "SSL/TLS",
 				Title:       "SSL証明書の期限が近い",
 				Description: fmt.Sprintf("証明書はあと%d日で期限切れします", r.SSL.DaysRemaining),
@@ -471,7 +512,7 @@ func aggregateFindings(r *ScanResult) {
 		}
 		if r.SSL.Protocol == "TLS 1.0" || r.SSL.Protocol == "TLS 1.1" {
 			r.Findings = append(r.Findings, Finding{
-				Severity:    "Medium",
+				Severity:    SeverityMedium,
 				Category:    "SSL/TLS",
 				Title:       "古いTLSバージョン",
 				Description: fmt.Sprintf("%sが使用されています", r.SSL.Protocol),
@@ -483,7 +524,7 @@ func aggregateFindings(r *ScanResult) {
 	// Header findings
 	if !r.Headers.HSTS {
 		r.Findings = append(r.Findings, Finding{
-			Severity:    "Medium",
+			Severity:    SeverityMedium,
 			Category:    "HTTPヘッダー",
 			Title:       "HSTSヘッダーなし",
 			Description: "Strict-Transport-Securityヘッダーが設定されていません",
@@ -492,7 +533,7 @@ func aggregateFindings(r *ScanResult) {
 	}
 	if r.Headers.XFrameOptions == "" {
 		r.Findings = append(r.Findings, Finding{
-			Severity:    "Medium",
+			Severity:    SeverityMedium,
 			Category:    "HTTPヘッダー",
 			Title:       "X-Frame-Optionsなし",
 			Description: "クリックジャッキング攻撃に対して脆弱です",
@@ -501,7 +542,7 @@ func aggregateFindings(r *ScanResult) {
 	}
 	if !r.Headers.CSP {
 		r.Findings = append(r.Findings, Finding{
-			Severity:    "Low",
+			Severity:    SeverityLow,
 			Category:    "HTTPヘッダー",
 			Title:       "Content-Security-Policyなし",
 			Description: "CSPヘッダーが設定されていません",
@@ -512,7 +553,7 @@ func aggregateFindings(r *ScanResult) {
 	// CMS findings
 	if r.CMS.VersionExposed {
 		r.Findings = append(r.Findings, Finding{
-			Severity:    "Medium",
+			Severity:    SeverityMedium,
 			Category:    "CMS",
 			Title:       fmt.Sprintf("%sバージョン露出", r.CMS.Name),
 			Description: fmt.Sprintf("%s %sが検出されました", r.CMS.Name, r.CMS.Version),
@@ -522,9 +563,9 @@ func aggregateFindings(r *ScanResult) {
 	
 	// Server info findings
 	if r.ServerInfo.Exposed {
-		severity := "Low"
-		if r.ServerInfo.Risk == "Medium" {
-			severity = "Medium"
+		severity := SeverityLow
+		if r.ServerInfo.Risk == SeverityMedium {
+			severity = SeverityMedium
 		}
 		r.Findings = append(r.Findings, Finding{
 			Severity:    severity,
@@ -538,7 +579,7 @@ func aggregateFindings(r *ScanResult) {
 	// DNS findings
 	if r.DNS.HasMX && !r.DNS.HasSPF {
 		r.Findings = append(r.Findings, Finding{
-			Severity:    "High",
+			Severity:    SeverityHigh,
 			Category:    "メールセキュリティ",
 			Title:       "SPFレコードなし",
 			Description: "メール送信元の認証がされていません",
@@ -547,7 +588,7 @@ func aggregateFindings(r *ScanResult) {
 	}
 	if r.DNS.HasMX && !r.DNS.HasDMARC {
 		r.Findings = append(r.Findings, Finding{
-			Severity:    "Medium",
+			Severity:    SeverityMedium,
 			Category:    "メールセキュリティ",
 			Title:       "DMARCレコードなし",
 			Description: "メールのなりすまし検証ポリシーがありません",
@@ -563,11 +604,11 @@ func calculateOverallRisk(r *ScanResult) {
 	
 	for _, f := range r.Findings {
 		switch f.Severity {
-		case "Critical":
+		case SeverityCritical:
 			criticalCount++
-		case "High":
+		case SeverityHigh:
 			highCount++
-		case "Medium":
+		case SeverityMedium:
 			mediumCount++
 		}
 	}
@@ -575,13 +616,13 @@ func calculateOverallRisk(r *ScanResult) {
 	r.RiskScore = criticalCount*10 + highCount*5 + mediumCount*2
 	
 	if criticalCount > 0 {
-		r.OverallRisk = "Critical"
+		r.OverallRisk = SeverityCritical
 	} else if highCount > 0 {
-		r.OverallRisk = "High"
+		r.OverallRisk = SeverityHigh
 	} else if mediumCount > 0 {
-		r.OverallRisk = "Medium"
+		r.OverallRisk = SeverityMedium
 	} else if len(r.Findings) > 0 {
-		r.OverallRisk = "Low"
+		r.OverallRisk = SeverityLow
 	} else {
 		r.OverallRisk = "Safe"
 	}
