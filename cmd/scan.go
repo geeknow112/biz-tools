@@ -107,7 +107,7 @@ Example:
 
 func init() {
 	rootCmd.AddCommand(scanCmd)
-	scanCmd.Flags().StringVarP(&outputFormat, "output", "o", "text", "Output format (text, markdown, json)")
+	scanCmd.Flags().StringVarP(&outputFormat, "output", "o", "text", "Output format (text, markdown, json, html)")
 	scanCmd.Flags().StringVarP(&outputFile, "file", "f", "", "Output file path")
 	scanCmd.Flags().IntVarP(&timeout, "timeout", "t", 10, "Request timeout in seconds")
 }
@@ -593,6 +593,8 @@ func formatOutput(r *ScanResult, format string) string {
 		return formatJSON(r)
 	case "markdown":
 		return formatMarkdown(r)
+	case "html":
+		return formatHTML(r)
 	default:
 		return formatText(r)
 	}
@@ -711,6 +713,127 @@ func formatJSON(r *ScanResult) string {
 		return "{}"
 	}
 	return string(b)
+}
+
+func formatHTML(r *ScanResult) string {
+	var sb strings.Builder
+	
+	sb.WriteString(`<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>セキュリティ簡易診断レポート</title>
+<style>
+body { font-family: 'Hiragino Sans', 'Meiryo', sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; line-height: 1.6; }
+h1 { color: #333; border-bottom: 2px solid #333; padding-bottom: 10px; }
+h2 { color: #555; margin-top: 30px; }
+h3 { color: #666; }
+table { border-collapse: collapse; width: 100%; margin: 15px 0; }
+th, td { border: 1px solid #333; padding: 10px; text-align: left; }
+th { background: #f0f0f0; }
+.risk-critical { color: #d32f2f; font-weight: bold; }
+.risk-high { color: #f57c00; font-weight: bold; }
+.risk-medium { color: #fbc02d; font-weight: bold; }
+.risk-low { color: #388e3c; }
+.risk-safe { color: #1976d2; }
+.finding { background: #fafafa; padding: 15px; margin: 10px 0; border-left: 4px solid #ccc; }
+.finding-critical { border-left-color: #d32f2f; }
+.finding-high { border-left-color: #f57c00; }
+.finding-medium { border-left-color: #fbc02d; }
+.finding-low { border-left-color: #388e3c; }
+.meta { color: #666; }
+.footer { margin-top: 40px; padding-top: 20px; border-top: 1px solid #ccc; color: #888; font-size: 0.9em; }
+</style>
+</head>
+<body>
+`)
+	
+	// Header
+	sb.WriteString("<h1>セキュリティ簡易診断レポート</h1>\n")
+	sb.WriteString(fmt.Sprintf("<p class=\"meta\"><strong>対象URL:</strong> <a href=\"%s\">%s</a><br>\n", r.URL, r.URL))
+	sb.WriteString(fmt.Sprintf("<strong>診断日時:</strong> %s<br>\n", r.ScanTime.Format("2006年01月02日 15:04")))
+	riskClass := "risk-" + strings.ToLower(r.OverallRisk)
+	sb.WriteString(fmt.Sprintf("<strong>総合リスク:</strong> <span class=\"%s\">%s</span> (スコア: %d)</p>\n\n", riskClass, r.OverallRisk, r.RiskScore))
+	
+	// Summary Table
+	sb.WriteString("<h2>診断サマリー</h2>\n")
+	sb.WriteString("<table>\n<tr><th>項目</th><th>状態</th><th>リスク</th></tr>\n")
+	
+	sslStatus := "✅ 有効"
+	if !r.SSL.Enabled {
+		sslStatus = "❌ 無効"
+	} else if r.SSL.DaysRemaining < 30 {
+		sslStatus = "⚠️ 要更新"
+	}
+	sb.WriteString(fmt.Sprintf("<tr><td>SSL証明書</td><td>%s</td><td>%s</td></tr>\n", sslStatus, r.SSL.Risk))
+	sb.WriteString(fmt.Sprintf("<tr><td>HTTPヘッダー</td><td>未設定: %d項目</td><td>%s</td></tr>\n", len(r.Headers.MissingHeaders), r.Headers.Risk))
+	
+	cmsStatus := "未検出"
+	if r.CMS.Detected {
+		cmsStatus = r.CMS.Name
+		if r.CMS.VersionExposed {
+			cmsStatus += " (ver露出)"
+		}
+	}
+	sb.WriteString(fmt.Sprintf("<tr><td>CMS</td><td>%s</td><td>%s</td></tr>\n", cmsStatus, r.CMS.Risk))
+	sb.WriteString(fmt.Sprintf("<tr><td>サーバー情報</td><td>%s</td><td>%s</td></tr>\n", boolToExposed(r.ServerInfo.Exposed), r.ServerInfo.Risk))
+	sb.WriteString(fmt.Sprintf("<tr><td>メール認証</td><td>SPF:%s DMARC:%s</td><td>%s</td></tr>\n", boolToMark(r.DNS.HasSPF), boolToMark(r.DNS.HasDMARC), r.DNS.Risk))
+	sb.WriteString("</table>\n\n")
+	
+	// SSL Details
+	sb.WriteString("<h2>SSL/TLS詳細</h2>\n")
+	if r.SSL.Enabled {
+		sb.WriteString("<ul>\n")
+		sb.WriteString(fmt.Sprintf("<li><strong>有効期限:</strong> %s（残り%d日）</li>\n", r.SSL.ValidUntil.Format("2006年01月02日"), r.SSL.DaysRemaining))
+		sb.WriteString(fmt.Sprintf("<li><strong>発行者:</strong> %s</li>\n", r.SSL.Issuer))
+		sb.WriteString(fmt.Sprintf("<li><strong>プロトコル:</strong> %s</li>\n", r.SSL.Protocol))
+		sb.WriteString("</ul>\n\n")
+	} else {
+		sb.WriteString("<p class=\"risk-critical\">⛔ SSL証明書が設定されていません</p>\n\n")
+	}
+	
+	// Findings
+	sb.WriteString("<h2>検出された問題</h2>\n")
+	if len(r.Findings) == 0 {
+		sb.WriteString("<p class=\"risk-safe\">✅ 重大な問題は検出されませんでした。</p>\n")
+	} else {
+		for i, f := range r.Findings {
+			icon := "ℹ️"
+			findingClass := "finding"
+			switch f.Severity {
+			case "Critical":
+				icon = "🔴"
+				findingClass = "finding finding-critical"
+			case "High":
+				icon = "🟠"
+				findingClass = "finding finding-high"
+			case "Medium":
+				icon = "🟡"
+				findingClass = "finding finding-medium"
+			case "Low":
+				icon = "🟢"
+				findingClass = "finding finding-low"
+			}
+			sb.WriteString(fmt.Sprintf("<div class=\"%s\">\n", findingClass))
+			sb.WriteString(fmt.Sprintf("<h3>%d. %s [%s] %s</h3>\n", i+1, icon, f.Severity, f.Title))
+			sb.WriteString(fmt.Sprintf("<p><strong>カテゴリ:</strong> %s<br>\n", f.Category))
+			sb.WriteString(fmt.Sprintf("<strong>説明:</strong> %s<br>\n", f.Description))
+			sb.WriteString(fmt.Sprintf("<strong>推奨対応:</strong> %s</p>\n", f.Remediation))
+			sb.WriteString("</div>\n")
+		}
+	}
+	
+	// Footer
+	sb.WriteString("<div class=\"footer\">\n")
+	sb.WriteString("<h2>ご注意</h2>\n")
+	sb.WriteString("<p>この診断は公開情報のみを使用した簡易診断です。詳細な脆弱性診断については、許可を得た上での本格診断をご検討ください。</p>\n")
+	sb.WriteString("<p><strong>診断実施:</strong> Trident Capital Symbiosis 合同会社</p>\n")
+	sb.WriteString("</div>\n")
+	
+	sb.WriteString("</body>\n</html>")
+	
+	return sb.String()
 }
 
 func boolToMark(b bool) string {

@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>セキュリティ簡易診断レポート</title>
+<style>
+body { font-family: 'Hiragino Sans', 'Meiryo', sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; line-height: 1.6; }
+h1 { color: #333; border-bottom: 2px solid #333; padding-bottom: 10px; }
+h2 { color: #555; margin-top: 30px; }
+h3 { color: #666; }
+table { border-collapse: collapse; width: 100%; margin: 15px 0; }
+th, td { border: 1px solid #333; padding: 10px; text-align: left; }
+th { background: #f0f0f0; }
+.risk-critical { color: #d32f2f; font-weight: bold; }
+.risk-high { color: #f57c00; font-weight: bold; }
+.risk-medium { color: #fbc02d; font-weight: bold; }
+.risk-low { color: #388e3c; }
+.risk-safe { color: #1976d2; }
+.finding { background: #fafafa; padding: 15px; margin: 10px 0; border-left: 4px solid #ccc; }
+.finding-critical { border-left-color: #d32f2f; }
+.finding-high { border-left-color: #f57c00; }
+.finding-medium { border-left-color: #fbc02d; }
+.finding-low { border-left-color: #388e3c; }
+.meta { color: #666; }
+.footer { margin-top: 40px; padding-top: 20px; border-top: 1px solid #ccc; color: #888; font-size: 0.9em; }
+</style>
+</head>
+<body>
+<h1>セキュリティ簡易診断レポート</h1>
+<p class="meta"><strong>対象URL:</strong> <a href="https://www.suncof.co.jp">https://www.suncof.co.jp</a><br>
+<strong>診断日時:</strong> 2026年07月03日 22:44<br>
+<strong>総合リスク:</strong> <span class="risk-medium">Medium</span> (スコア: 4)</p>
+
+<h2>診断サマリー</h2>
+<table>
+<tr><th>項目</th><th>状態</th><th>リスク</th></tr>
+<tr><td>SSL証明書</td><td>✅ 有効</td><td>High</td></tr>
+<tr><td>HTTPヘッダー</td><td>未設定: 0項目</td><td>Unknown</td></tr>
+<tr><td>CMS</td><td>未検出</td><td>Info</td></tr>
+<tr><td>サーバー情報</td><td>非公開</td><td>Info</td></tr>
+<tr><td>メール認証</td><td>SPF:❌ DMARC:❌</td><td>Info</td></tr>
+</table>
+
+<h2>SSL/TLS詳細</h2>
+<ul>
+<li><strong>有効期限:</strong> 2026年10月25日（残り114日）</li>
+<li><strong>発行者:</strong> CloudSecure RSA Domain Validation Secure Server CA 3</li>
+<li><strong>プロトコル:</strong> TLS 1.3</li>
+</ul>
+
+<h2>検出された問題</h2>
+<div class="finding finding-medium">
+<h3>1. 🟡 [Medium] HSTSヘッダーなし</h3>
+<p><strong>カテゴリ:</strong> HTTPヘッダー<br>
+<strong>説明:</strong> Strict-Transport-Securityヘッダーが設定されていません<br>
+<strong>推奨対応:</strong> HSTSヘッダーを追加してHTTPS接続を強制してください</p>
+</div>
+<div class="finding finding-medium">
+<h3>2. 🟡 [Medium] X-Frame-Optionsなし</h3>
+<p><strong>カテゴリ:</strong> HTTPヘッダー<br>
+<strong>説明:</strong> クリックジャッキング攻撃に対して脆弱です<br>
+<strong>推奨対応:</strong> X-Frame-Options: DENY または SAMEORIGIN を設定してください</p>
+</div>
+<div class="finding finding-low">
+<h3>3. 🟢 [Low] Content-Security-Policyなし</h3>
+<p><strong>カテゴリ:</strong> HTTPヘッダー<br>
+<strong>説明:</strong> CSPヘッダーが設定されていません<br>
+<strong>推奨対応:</strong> CSPを設定してXSS攻撃を軽減してください</p>
+</div>
+<div class="footer">
+<h2>ご注意</h2>
+<p>この診断は公開情報のみを使用した簡易診断です。詳細な脆弱性診断については、許可を得た上での本格診断をご検討ください。</p>
+<p><strong>診断実施:</strong> Trident Capital Symbiosis 合同会社</p>
+</div>
+</body>
+</html>

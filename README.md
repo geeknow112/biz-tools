@@ -11,7 +11,8 @@ biz-tools/
 ├── go.sum
 ├── cmd/
 │   ├── root.go      # ルートコマンド定義 (cobra.Command)
-│   └── media.go     # mediaサブコマンド (draft, publish)
+│   ├── media.go     # mediaサブコマンド (draft, publish)
+│   └── scan.go      # セキュリティ簡易診断
 └── README.md
 ```
 
@@ -19,6 +20,7 @@ biz-tools/
 
 ```
 biz-tools              ← rootCmd (cmd/root.go)
+├── scan               ← scanCmd (cmd/scan.go) ★セキュリティ診断
 ├── media              ← mediaCmd (cmd/media.go)
 │   ├── draft          ← mediaDraftCmd
 │   └── publish        ← mediaPublishCmd
@@ -35,6 +37,44 @@ go install github.com/geeknow112/biz-tools@latest
 ```
 
 ## 使い方
+
+### scan - セキュリティ簡易診断
+
+Webサイトの公開情報のみを使用したセキュリティ簡易診断を実行します。
+
+```bash
+# 基本的な使い方
+biz-tools scan https://example.com
+
+# Markdown形式で出力
+biz-tools scan https://example.com -o markdown
+
+# JSON形式で出力
+biz-tools scan https://example.com -o json
+
+# ファイルに保存
+biz-tools scan https://example.com -o markdown -f report.md
+```
+
+#### チェック項目
+
+| 項目 | 説明 |
+|------|------|
+| SSL証明書 | 有効性、有効期限、プロトコル |
+| HTTPヘッダー | HSTS, X-Frame-Options, CSP等 |
+| CMS検出 | WordPress, Drupal, Joomla |
+| サーバー情報 | Server, X-Powered-By の露出 |
+| DNS | SPF, DMARC レコード |
+
+#### オプション
+
+| オプション | 説明 | デフォルト |
+|-----------|------|----------|
+| `-o, --output` | 出力形式 (text, markdown, json) | text |
+| `-f, --file` | 出力ファイルパス | - |
+| `-t, --timeout` | タイムアウト秒数 | 10 |
+
+### media - 記事管理
 
 ```bash
 # ヘルプ表示
