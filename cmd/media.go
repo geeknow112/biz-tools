@@ -18,7 +18,10 @@ type Config struct {
 }
 
 type PlatformConfig struct {
-	Repo string `yaml:"repo"`
+	Repo        string `yaml:"repo"`
+	URL         string `yaml:"url"`
+	Username    string `yaml:"username"`
+	AppPassword string `yaml:"app_password"`
 }
 
 var mediaCmd = &cobra.Command{
@@ -148,15 +151,7 @@ func runDraft(file, platform string) error {
 	}
 
 	// 8. Determine destination path based on platform
-	var destPath string
-	switch platform {
-	case "zenn":
-		destPath = filepath.Join("articles", filepath.Base(file))
-	case "qiita":
-		destPath = filepath.Join("public", filepath.Base(file))
-	default:
-		destPath = filepath.Base(file)
-	}
+	destPath := platformDestPath(platform, file)
 
 	// 9. Write file
 	destDir := filepath.Dir(destPath)
@@ -204,6 +199,19 @@ func runDraft(file, platform string) error {
 	gitCommand("checkout", baseBranch)
 
 	return nil
+}
+
+func platformDestPath(platform, file string) string {
+	switch platform {
+	case "zenn":
+		return filepath.Join("articles", filepath.Base(file))
+	case "qiita":
+		return filepath.Join("public", filepath.Base(file))
+	case "wordpress":
+		return filepath.Join("pages", filepath.Base(file))
+	default:
+		return filepath.Base(file)
+	}
 }
 
 func gitCommand(args ...string) (string, error) {
@@ -260,28 +268,54 @@ func runPublish(file, platform string) error {
 
 	// Parse PR list to find matching PR
 	prNumber, prURL, err := findMatchingPR(prList, fileName, platform)
+	alreadyMerged := false
 	if err != nil {
-		return err
+		// Someone else (e.g. merged directly on GitHub) may have already
+		// merged it between draft and publish — check merged PRs before
+		// giving up, so we still run any platform-specific publish step.
+		mergedList, mErr := ghCommand("pr", "list", "--state", "merged", "--json", "number,title,url", "--limit", "20")
+		if mErr == nil {
+			if num, url, mfErr := findMatchingPR(mergedList, fileName, platform); mfErr == nil {
+				prNumber, prURL, alreadyMerged = num, url, true
+			}
+		}
+		if prNumber == "" {
+			return err
+		}
 	}
 
 	fmt.Printf("Found PR #%s: %s\n", prNumber, prURL)
 
-	// 4. Check PR status (approved?)
-	prStatus, err := ghCommand("pr", "view", prNumber, "--json", "reviewDecision,mergeable,state")
-	if err != nil {
-		return fmt.Errorf("failed to get PR status: %w", err)
-	}
-	fmt.Printf("PR Status: %s\n", strings.TrimSpace(prStatus))
+	if alreadyMerged {
+		fmt.Println("PR is already merged, skipping merge step")
+	} else {
+		// 4. Check PR status (approved?)
+		prStatus, err := ghCommand("pr", "view", prNumber, "--json", "reviewDecision,mergeable,state")
+		if err != nil {
+			return fmt.Errorf("failed to get PR status: %w", err)
+		}
+		fmt.Printf("PR Status: %s\n", strings.TrimSpace(prStatus))
 
-	// 5. Merge the PR
-	fmt.Println("Merging PR...")
-	mergeOutput, err := ghCommand("pr", "merge", prNumber, "--squash", "--delete-branch")
-	if err != nil {
-		return fmt.Errorf("failed to merge PR: %w", err)
+		// 5. Merge the PR
+		fmt.Println("Merging PR...")
+		mergeOutput, err := ghCommand("pr", "merge", prNumber, "--squash", "--delete-branch")
+		if err != nil {
+			return fmt.Errorf("failed to merge PR: %w", err)
+		}
+
+		fmt.Printf("\n✅ Published successfully!\n")
+		fmt.Printf("   %s\n", strings.TrimSpace(mergeOutput))
 	}
 
-	fmt.Printf("\n✅ Published successfully!\n")
-	fmt.Printf("   %s\n", strings.TrimSpace(mergeOutput))
+	// 6. WordPress pages are a live CMS, not a static site the platform pulls
+	// from — push the merged content over the REST API to take effect.
+	if platform == "wordpress" {
+		fmt.Println("Pushing merged content to WordPress...")
+		if err := publishToWordPress(platformConfig, file); err != nil {
+			return fmt.Errorf("PR merged but failed to update WordPress: %w", err)
+		}
+		fmt.Println("   WordPress page updated")
+	}
 
 	return nil
 }

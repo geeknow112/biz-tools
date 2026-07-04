@@ -9,4 +9,7 @@ platforms:
   note:
     repo: C:\Users\youre\Documents\git_repo\note-content
   wordpress:
-    repo: C:\Users\youre\Documents\git_repo\wordpress-content
+    repo: C:\Users\youre\Documents\git_repo\corporate-content
+    url: https://trident-capital-symbiosis.com
+    username: biz-tools
+    app_password: xxxx xxxx xxxx xxxx xxxx xxxx
