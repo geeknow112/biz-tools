@@ -10,19 +10,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
-	"gopkg.in/yaml.v3"
 )
-
-type Config struct {
-	Platforms map[string]PlatformConfig `yaml:"platforms"`
-}
-
-type PlatformConfig struct {
-	Repo        string `yaml:"repo"`
-	URL         string `yaml:"url"`
-	Username    string `yaml:"username"`
-	AppPassword string `yaml:"app_password"`
-}
 
 var mediaCmd = &cobra.Command{
 	Use:   "media",
@@ -70,32 +58,6 @@ func init() {
 
 	mediaDraftCmd.Flags().StringP("platform", "p", "zenn", "Target platform (zenn, qiita, note, wordpress, x)")
 	mediaPublishCmd.Flags().StringP("platform", "p", "zenn", "Target platform (zenn, qiita, note, wordpress, x)")
-}
-
-func loadConfig() (*Config, error) {
-	// Look for config.yaml in current dir or executable dir
-	configPaths := []string{
-		"config.yaml",
-		filepath.Join(filepath.Dir(os.Args[0]), "config.yaml"),
-	}
-
-	var data []byte
-	var err error
-	for _, path := range configPaths {
-		data, err = os.ReadFile(path)
-		if err == nil {
-			break
-		}
-	}
-	if err != nil {
-		return nil, fmt.Errorf("config.yaml not found")
-	}
-
-	var config Config
-	if err := yaml.Unmarshal(data, &config); err != nil {
-		return nil, fmt.Errorf("failed to parse config: %w", err)
-	}
-	return &config, nil
 }
 
 func runDraft(file, platform string) error {

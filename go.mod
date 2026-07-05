@@ -5,6 +5,7 @@ go 1.18
 require (
 	github.com/spf13/cobra v1.10.2
 	github.com/yuin/goldmark v1.5.6
+	golang.org/x/net v0.17.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 

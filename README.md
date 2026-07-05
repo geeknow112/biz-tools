@@ -11,8 +11,12 @@ biz-tools/
 ├── go.sum
 ├── cmd/
 │   ├── root.go      # ルートコマンド定義 (cobra.Command)
+│   ├── config.go    # config.yaml 読み込み (Config/PlatformConfig/CrawlConfig/OutreachConfig)
 │   ├── media.go     # mediaサブコマンド (draft, publish)
-│   └── scan.go      # セキュリティ簡易診断
+│   ├── wp.go        # WordPress REST API連携 (media publish -p wordpress用)
+│   ├── scan.go      # セキュリティ簡易診断 (単体 / --batch)
+│   ├── crawl.go     # Google Custom Search APIでの見込みサイト発見
+│   └── outreach.go  # 問い合わせフォーム経由の営業DM (要承認)
 └── README.md
 ```
 
@@ -21,6 +25,13 @@ biz-tools/
 ```
 biz-tools              ← rootCmd (cmd/root.go)
 ├── scan               ← scanCmd (cmd/scan.go) ★セキュリティ診断
+├── crawl              ← crawlCmd (cmd/crawl.go) ★見込みサイト発見
+├── outreach           ← outreachCmd (cmd/outreach.go) ★営業DM(要承認)
+│   ├── queue          ← outreachQueueCmd
+│   ├── list           ← outreachListCmd
+│   ├── approve        ← outreachApproveCmd
+│   ├── send           ← outreachSendCmd
+│   └── history        ← outreachHistoryCmd
 ├── media              ← mediaCmd (cmd/media.go)
 │   ├── draft          ← mediaDraftCmd
 │   └── publish        ← mediaPublishCmd
@@ -73,6 +84,53 @@ biz-tools scan https://example.com -o markdown -f report.md
 | `-o, --output` | 出力形式 (text, markdown, json) | text |
 | `-f, --file` | 出力ファイルパス | - |
 | `-t, --timeout` | タイムアウト秒数 | 10 |
+| `-b, --batch` | crawlの出力(JSON/CSV)を一括診断 | - |
+
+```bash
+# crawlの結果を一括診断
+biz-tools scan --batch candidates.json -f scan_batch_results.json
+```
+
+### crawl - 見込みサイト発見 (Google Custom Search API)
+
+Google dork検索（`site:`, `inurl:`, 除外`-`等）で、PHPエラー/警告等を公開してしまっているサイトを発見します。
+**Google検索結果ページを直接スクレイピングするものではなく、公式のCustom Search JSON APIを使用します**（無料枠1日100クエリ）。
+
+事前準備:
+1. https://console.cloud.google.com/apis/credentials でAPIキーを発行
+2. https://programmablesearchengine.google.com/ で検索エンジンを作成（「ウェブ全体を検索」に設定）
+3. `config.yaml` の `crawl.google_api_key` / `crawl.google_cse_id` に設定
+
+```bash
+# queries.txt に1行1クエリでdork検索式を書く
+biz-tools crawl -q queries.txt -o candidates.json
+```
+
+### outreach - 営業DM (要承認・自動送信ではない)
+
+`scan --batch` の結果から、問い合わせフォームを自動検出してDM案を作成します。
+**人間が明示的に承認したものだけが送信されます。** 完全自動送信ではありません。
+
+```bash
+# 1. scan --batch の結果からキューを作成（フォーム自動検出・メッセージ下書き）
+biz-tools outreach queue -i scan_batch_results.json --min-risk Medium
+
+# 2. キューを確認
+biz-tools outreach list
+
+# 3. 送ってよいものだけ承認（ドメイン指定 or --all）
+biz-tools outreach approve example.co.jp
+biz-tools outreach approve --all
+
+# 4. 承認済みのみ送信（--dry-runで送信内容だけ確認可能）
+biz-tools outreach send --dry-run
+biz-tools outreach send
+
+# 5. 送信履歴（次回queue作成時に重複送信を自動的にスキップ）
+biz-tools outreach history
+```
+
+フォームが自動検出できなかったサイトは `manual_required: true` としてキューに残り、`send` では自動的にスキップされます（手動対応が必要）。
 
 ### media - 記事管理
 

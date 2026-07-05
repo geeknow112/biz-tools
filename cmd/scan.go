@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"crypto/tls"
+	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -94,6 +95,7 @@ var (
 	outputFormat string
 	outputFile   string
 	timeout      int
+	scanBatch    string
 )
 
 var scanCmd = &cobra.Command{
@@ -110,8 +112,9 @@ This tool does NOT perform intrusive scanning. It only checks:
 
 Example:
   biz-tools scan https://example.com
-  biz-tools scan https://example.com -o markdown -f report.md`,
-	Args: cobra.ExactArgs(1),
+  biz-tools scan https://example.com -o markdown -f report.md
+  biz-tools scan --batch candidates.json -f results.json`,
+	Args: cobra.MaximumNArgs(1),
 	Run:  runScan,
 }
 
@@ -120,48 +123,28 @@ func init() {
 	scanCmd.Flags().StringVarP(&outputFormat, "output", "o", "text", "Output format (text, markdown, json, html)")
 	scanCmd.Flags().StringVarP(&outputFile, "file", "f", "", "Output file path")
 	scanCmd.Flags().IntVarP(&timeout, "timeout", "t", 10, "Request timeout in seconds")
+	scanCmd.Flags().StringVarP(&scanBatch, "batch", "b", "", "Scan every site from a crawl JSON/CSV file instead of a single URL")
 }
 
 func runScan(cmd *cobra.Command, args []string) {
-	url := normalizeURL(args[0])
-	
-	fmt.Printf("🔍 Scanning: %s\n", url)
-	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	
-	result := &ScanResult{
-		URL:      url,
-		ScanTime: time.Now(),
-		Findings: []Finding{},
+	if scanBatch != "" {
+		if err := runScanBatch(scanBatch); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+		return
 	}
-	
-	// Run all checks
-	fmt.Print("Checking SSL certificate... ")
-	result.SSL = checkSSL(url)
-	fmt.Println("✓")
-	
-	fmt.Print("Checking HTTP headers... ")
-	result.Headers, result.ServerInfo = checkHeaders(url)
-	fmt.Println("✓")
-	
-	fmt.Print("Detecting CMS... ")
-	result.CMS = detectCMS(url)
-	fmt.Println("✓")
-	
-	fmt.Print("Checking DNS records... ")
-	result.DNS = checkDNS(url)
-	fmt.Println("✓")
-	
-	// Aggregate findings
-	aggregateFindings(result)
-	
-	// Calculate overall risk
-	calculateOverallRisk(result)
-	
-	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	
+
+	if len(args) != 1 {
+		fmt.Fprintln(os.Stderr, "Error: a URL is required unless --batch is used")
+		os.Exit(1)
+	}
+
+	result := scanOne(args[0])
+
 	// Output results
 	output := formatOutput(result, outputFormat)
-	
+
 	if outputFile != "" {
 		err := os.WriteFile(outputFile, []byte(output), 0644)
 		if err != nil {
@@ -172,6 +155,124 @@ func runScan(cmd *cobra.Command, args []string) {
 	} else {
 		fmt.Println(output)
 	}
+}
+
+// scanOne runs every check against a single URL and returns the aggregated result.
+func scanOne(rawURL string) *ScanResult {
+	url := normalizeURL(rawURL)
+
+	fmt.Printf("🔍 Scanning: %s\n", url)
+	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+	result := &ScanResult{
+		URL:      url,
+		ScanTime: time.Now(),
+		Findings: []Finding{},
+	}
+
+	fmt.Print("Checking SSL certificate... ")
+	result.SSL = checkSSL(url)
+	fmt.Println("✓")
+
+	fmt.Print("Checking HTTP headers... ")
+	result.Headers, result.ServerInfo = checkHeaders(url)
+	fmt.Println("✓")
+
+	fmt.Print("Detecting CMS... ")
+	result.CMS = detectCMS(url)
+	fmt.Println("✓")
+
+	fmt.Print("Checking DNS records... ")
+	result.DNS = checkDNS(url)
+	fmt.Println("✓")
+
+	aggregateFindings(result)
+	calculateOverallRisk(result)
+
+	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+	return result
+}
+
+// runScanBatch reads candidate sites from a crawl output file (JSON array with
+// a "domain" field, or CSV with a "domain" column) and scans each in turn.
+func runScanBatch(inputPath string) error {
+	domains, err := readCrawlDomains(inputPath)
+	if err != nil {
+		return fmt.Errorf("failed to read %s: %w", inputPath, err)
+	}
+
+	fmt.Printf("Batch scanning %d sites from %s\n\n", len(domains), inputPath)
+
+	results := make([]*ScanResult, 0, len(domains))
+	for i, domain := range domains {
+		fmt.Printf("[%d/%d] ", i+1, len(domains))
+		results = append(results, scanOne(domain))
+		fmt.Println()
+	}
+
+	// Summary sorted by risk score, highest first
+	fmt.Println("=== バッチ診断サマリー ===")
+	for _, r := range results {
+		fmt.Printf("%-40s %-8s (score %d, findings %d)\n", r.URL, r.OverallRisk, r.RiskScore, len(r.Findings))
+	}
+
+	data, err := json.MarshalIndent(results, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	out := outputFile
+	if out == "" {
+		out = "scan_batch_results.json"
+	}
+	if err := os.WriteFile(out, data, 0644); err != nil {
+		return fmt.Errorf("failed to write results: %w", err)
+	}
+	fmt.Printf("\n📄 Batch results saved to: %s\n", out)
+	return nil
+}
+
+func readCrawlDomains(path string) ([]string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+
+	if strings.HasSuffix(path, ".csv") {
+		r := csv.NewReader(strings.NewReader(string(data)))
+		records, err := r.ReadAll()
+		if err != nil {
+			return nil, err
+		}
+		if len(records) == 0 {
+			return nil, nil
+		}
+		domainCol := 0
+		for i, h := range records[0] {
+			if h == "domain" {
+				domainCol = i
+				break
+			}
+		}
+		var domains []string
+		for _, row := range records[1:] {
+			if domainCol < len(row) {
+				domains = append(domains, row[domainCol])
+			}
+		}
+		return domains, nil
+	}
+
+	var crawled []CrawlResult
+	if err := json.Unmarshal(data, &crawled); err != nil {
+		return nil, fmt.Errorf("failed to parse JSON: %w", err)
+	}
+	domains := make([]string, 0, len(crawled))
+	for _, c := range crawled {
+		domains = append(domains, c.Domain)
+	}
+	return domains, nil
 }
 
 func normalizeURL(url string) string {

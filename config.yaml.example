@@ -13,3 +13,20 @@ platforms:
     url: https://trident-capital-symbiosis.com
     username: biz-tools
     app_password: xxxx xxxx xxxx xxxx xxxx xxxx
+
+# Used by `biz-tools crawl` (Google Custom Search JSON API — not scraping)
+# Get a key: https://console.cloud.google.com/apis/credentials
+# Create a search engine (set to search the whole web): https://programmablesearchengine.google.com/
+crawl:
+  google_api_key: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+  google_cse_id: xxxxxxxxxxxxxxxxx
+
+# Used by `biz-tools outreach` when drafting/submitting messages.
+# message_template is a Go text/template string; leave unset to use the
+# built-in default. Available fields: .URL .FindingsList .SenderName
+# .SenderCompany .SenderEmail
+outreach:
+  sender_name: 山田 太郎
+  sender_company: Trident Capital Symbiosis 合同会社
+  sender_email: info@trident-capital-symbiosis.com
+  message_template: ""
