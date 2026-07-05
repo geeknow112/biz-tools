@@ -23,12 +23,12 @@ type CrawlResult struct {
 	Query   string `json:"query"`
 }
 
-type googleSearchResponse struct {
-	Items []struct {
+type serpAPIResponse struct {
+	OrganicResults []struct {
 		Title   string `json:"title"`
 		Link    string `json:"link"`
 		Snippet string `json:"snippet"`
-	} `json:"items"`
+	} `json:"organic_results"`
 }
 
 var (
@@ -39,15 +39,15 @@ var (
 
 var crawlCmd = &cobra.Command{
 	Use:   "crawl",
-	Short: "Discover candidate sites via Google Custom Search dork queries",
+	Short: "Discover candidate sites via Google dork queries (SerpApi)",
 	Long: `Runs one or more Google dork-style search queries (site:, inurl:, "..." exclusions)
-against the Google Custom Search JSON API to discover publicly indexed pages
-exposing PHP errors/warnings or other signs of neglect, then writes a
+against SerpApi (a Google search results API) to discover publicly indexed
+pages exposing PHP errors/warnings or other signs of neglect, then writes a
 deduplicated (by domain) candidate list.
 
-Requires crawl.google_api_key and crawl.google_cse_id in config.yaml.
-Uses the official Custom Search API only — it does not scrape google.com
-search result pages directly.
+Requires crawl.serpapi_key in config.yaml (https://serpapi.com).
+This does not scrape google.com search result pages directly — it goes
+through SerpApi's API, which handles that legally on our behalf.
 
 Example:
   biz-tools crawl -q queries.txt -o candidates.json`,
@@ -67,8 +67,8 @@ func runCrawl(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	if config.Crawl.GoogleAPIKey == "" || config.Crawl.GoogleCSEID == "" {
-		return fmt.Errorf("crawl.google_api_key / crawl.google_cse_id not set in config.yaml")
+	if config.Crawl.SerpAPIKey == "" {
+		return fmt.Errorf("crawl.serpapi_key not set in config.yaml")
 	}
 
 	lines, err := readLines(crawlQueryFile)
@@ -88,19 +88,16 @@ func runCrawl(cmd *cobra.Command, args []string) error {
 		fmt.Printf("Searching: %s\n", query)
 
 		for page := 0; page < crawlMaxPages; page++ {
-			start := page*10 + 1
-			if start > 91 {
-				break // Google CSE API caps startIndex at 91 (100 results max)
-			}
-			resp, err := googleCustomSearch(client, config.Crawl.GoogleAPIKey, config.Crawl.GoogleCSEID, query, start)
+			start := page * 10
+			resp, err := serpAPISearch(client, config.Crawl.SerpAPIKey, query, start)
 			if err != nil {
 				fmt.Printf("  page %d: %v\n", page+1, err)
 				break
 			}
-			if len(resp.Items) == 0 {
+			if len(resp.OrganicResults) == 0 {
 				break
 			}
-			for _, item := range resp.Items {
+			for _, item := range resp.OrganicResults {
 				domain := extractDomain(item.Link)
 				if domain == "" || seenDomains[domain] {
 					continue
@@ -122,14 +119,14 @@ func runCrawl(cmd *cobra.Command, args []string) error {
 	return writeCrawlResults(results, crawlOutput)
 }
 
-func googleCustomSearch(client *http.Client, apiKey, cseID, query string, start int) (*googleSearchResponse, error) {
+func serpAPISearch(client *http.Client, apiKey, query string, start int) (*serpAPIResponse, error) {
 	params := url.Values{}
-	params.Set("key", apiKey)
-	params.Set("cx", cseID)
+	params.Set("engine", "google")
+	params.Set("api_key", apiKey)
 	params.Set("q", query)
 	params.Set("start", fmt.Sprintf("%d", start))
 
-	resp, err := client.Get("https://www.googleapis.com/customsearch/v1?" + params.Encode())
+	resp, err := client.Get("https://serpapi.com/search.json?" + params.Encode())
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
@@ -140,10 +137,10 @@ func googleCustomSearch(client *http.Client, apiKey, cseID, query string, start 
 		return nil, err
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("google API returned %d: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("SerpApi returned %d: %s", resp.StatusCode, string(body))
 	}
 
-	var result googleSearchResponse
+	var result serpAPIResponse
 	if err := json.Unmarshal(body, &result); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}

@@ -91,15 +91,17 @@ biz-tools scan https://example.com -o markdown -f report.md
 biz-tools scan --batch candidates.json -f scan_batch_results.json
 ```
 
-### crawl - 見込みサイト発見 (Google Custom Search API)
+### crawl - 見込みサイト発見 (SerpApi)
 
 Google dork検索（`site:`, `inurl:`, 除外`-`等）で、PHPエラー/警告等を公開してしまっているサイトを発見します。
-**Google検索結果ページを直接スクレイピングするものではなく、公式のCustom Search JSON APIを使用します**（無料枠1日100クエリ）。
+**Google検索結果ページを直接スクレイピングするものではなく、[SerpApi](https://serpapi.com)（Google検索結果を返すAPIサービス）経由で取得します**（無料枠250検索/月）。
+
+> 補足: 当初はGoogle Custom Search APIで実装していましたが、2026年1月にGoogleが無料の「ウェブ全体検索」を廃止（新規作成分は50ドメイン指定に制限）したため、SerpApiに切り替えました。
 
 事前準備:
-1. https://console.cloud.google.com/apis/credentials でAPIキーを発行
-2. https://programmablesearchengine.google.com/ で検索エンジンを作成（「ウェブ全体を検索」に設定）
-3. `config.yaml` の `crawl.google_api_key` / `crawl.google_cse_id` に設定
+1. https://serpapi.com でアカウント登録
+2. マイページからAPIキーを取得
+3. `config.yaml` の `crawl.serpapi_key` に設定
 
 ```bash
 # queries.txt に1行1クエリでdork検索式を書く

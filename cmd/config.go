@@ -22,8 +22,7 @@ type PlatformConfig struct {
 }
 
 type CrawlConfig struct {
-	GoogleAPIKey string `yaml:"google_api_key"`
-	GoogleCSEID  string `yaml:"google_cse_id"`
+	SerpAPIKey string `yaml:"serpapi_key"`
 }
 
 type OutreachConfig struct {
