@@ -3,3 +3,11 @@ biz-tools.exe
 config.yaml
 *.exe
 .env
+
+# crawl/scan/outreach generated data (candidate lists, scan results,
+# outreach queue/history) — not meant to be committed
+candidates.json
+candidates.csv
+scan_batch_results.json
+outreach_queue.json
+outreach_history.json

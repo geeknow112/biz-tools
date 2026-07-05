@@ -14,12 +14,10 @@ platforms:
     username: biz-tools
     app_password: xxxx xxxx xxxx xxxx xxxx xxxx
 
-# Used by `biz-tools crawl` (Google Custom Search JSON API — not scraping)
-# Get a key: https://console.cloud.google.com/apis/credentials
-# Create a search engine (set to search the whole web): https://programmablesearchengine.google.com/
+# Used by `biz-tools crawl` (SerpApi — Google search results via API, not scraping)
+# Get a key: https://serpapi.com (free tier: 250 searches/month)
 crawl:
-  google_api_key: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-  google_cse_id: xxxxxxxxxxxxxxxxx
+  serpapi_key: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 # Used by `biz-tools outreach` when drafting/submitting messages.
 # message_template is a Go text/template string; leave unset to use the
