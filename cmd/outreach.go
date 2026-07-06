@@ -449,6 +449,12 @@ var messageFieldKeywords = []string{
 // detectContactForm fetches the homepage, follows the most likely contact
 // link, and tries to identify a submittable inquiry form on that page.
 // manualRequired=true means no form could be confidently identified.
+//
+// TODO(security): baseURL comes from crawl/scan input with no restriction on
+// resolving to private/link-local addresses (e.g. 169.254.169.254). Low risk
+// today since input is sourced from real search results, but worth adding an
+// IP allowlist/denylist check before fetching if this is ever fed
+// less-trusted input.
 func detectContactForm(baseURL string, timeoutSec int, senderName, senderEmail, message string) (formURL, method string, fields map[string]string, manualRequired bool) {
 	client := &http.Client{Timeout: time.Duration(timeoutSec) * time.Second}
 
@@ -636,6 +642,13 @@ func textContent(n *html.Node) string {
 	return sb.String()
 }
 
+// TODO(reliability): hidden fields (CSRF tokens etc.) are captured at `queue`
+// time but only submitted whenever a human later runs `send` — by then the
+// token has often expired or was tied to a since-closed session, so the
+// submission may be rejected server-side. This is an inherent tension with
+// the review-gated design (no fully-automatic immediate send); fixing it
+// properly would mean re-fetching the form right before submit instead of
+// reusing the value captured at queue time.
 func submitContactForm(client *http.Client, formURL, method string, fields map[string]string) error {
 	values := url.Values{}
 	for k, v := range fields {
