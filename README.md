@@ -108,31 +108,21 @@ Google dork検索（`site:`, `inurl:`, 除外`-`等）で、PHPエラー/警告�
 biz-tools crawl -q queries.txt -o candidates.json
 ```
 
-### outreach - 営業DM (要承認・自動送信ではない)
+### outreach - 営業DM文面の下書き作成（送信は手動）
 
-`scan --batch` の結果から、問い合わせフォームを自動検出してDM案を作成します。
-**人間が明示的に承認したものだけが送信されます。** 完全自動送信ではありません。
+`scan --batch` の結果から、DM文面の下書きと（分かれば）問い合わせページのURLを作成します。
+**biz-toolsはフォーム送信もメール送信も一切行いません。** 実際の送信は人間が手動で行ってください
+（日本語の問い合わせフォームは「入力→確認→完了」のような多段階フォームが多く、汎用的な自動送信は現実的でないため）。
 
 ```bash
-# 1. scan --batch の結果からキューを作成（フォーム自動検出・メッセージ下書き）
+# scan --batch の結果から下書きキューを作成（問い合わせページ探索・メッセージ下書き）
 biz-tools outreach queue -i scan_batch_results.json --min-risk Medium
 
-# 2. キューを確認
+# キューを確認
 biz-tools outreach list
-
-# 3. 送ってよいものだけ承認（ドメイン指定 or --all）
-biz-tools outreach approve example.co.jp
-biz-tools outreach approve --all
-
-# 4. 承認済みのみ送信（--dry-runで送信内容だけ確認可能）
-biz-tools outreach send --dry-run
-biz-tools outreach send
-
-# 5. 送信履歴（次回queue作成時に重複送信を自動的にスキップ）
-biz-tools outreach history
 ```
 
-フォームが自動検出できなかったサイトは `manual_required: true` としてキューに残り、`send` では自動的にスキップされます（手動対応が必要）。
+`outreach_queue.json` に、ドメインごとの問い合わせページURL（判明した場合）とメッセージ本文が保存されます。あとはこれを見ながら、各サイトへ手動でコピー＆ペーストして送信してください。
 
 ### media - 記事管理
 
