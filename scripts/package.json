@@ -1,0 +1,15 @@
+{
+  "name": "biz-tools-scripts",
+  "version": "1.0.0",
+  "description": "Node.js scripts for biz-tools",
+  "scripts": {
+    "tweet": "node tweet-playwright.js",
+    "tweet:login": "node tweet-playwright.js --login"
+  },
+  "dependencies": {
+    "playwright": "^1.48.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

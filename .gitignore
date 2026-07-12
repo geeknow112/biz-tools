@@ -11,3 +11,7 @@ candidates.csv
 scan_batch_results.json
 outreach_queue.json
 outreach_history.json
+
+# Playwright Cookie state (contains auth credentials)
+scripts/x-cookies.json
+scripts/node_modules/
