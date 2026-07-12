@@ -1,0 +1,42 @@
+name: Auto Tweet
+
+on:
+  push:
+    paths:
+      - 'tweets/*.json'
+  schedule:
+    # 毎日9時と18時（JST）に実行
+    - cron: '0 0,9 * * *'  # UTC 0:00, 9:00 = JST 9:00, 18:00
+  workflow_dispatch:  # 手動実行用
+
+jobs:
+  tweet:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm install twitter-api-v2
+
+      - name: Post tweets
+        env:
+          X_API_KEY: ${{ secrets.X_API_KEY }}
+          X_API_KEY_SECRET: ${{ secrets.X_API_KEY_SECRET }}
+          X_ACCESS_TOKEN: ${{ secrets.X_ACCESS_TOKEN }}
+          X_ACCESS_TOKEN_SECRET: ${{ secrets.X_ACCESS_TOKEN_SECRET }}
+        run: node scripts/tweet.js
+
+      - name: Commit posted files
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --staged --quiet || git commit -m "chore: move posted tweets"
+          git push
