@@ -13,6 +13,20 @@ platforms:
     url: https://trident-capital-symbiosis.com
     username: biz-tools
     app_password: xxxx xxxx xxxx xxxx xxxx xxxx
+  # Used by `biz-tools media post <file> -p x` (immediate posting, no PR flow).
+  # Get these from the X Developer Portal (developer.x.com) after creating an
+  # App with "Read and Write" OAuth 1.0a User authentication enabled:
+  #   - api_key / api_secret: App's "API Key and Secret" (Consumer Keys)
+  #   - access_token / access_token_secret: App's "Access Token and Secret"
+  #     (generate under the App's "Keys and tokens" tab; must be regenerated
+  #     if the App's permissions are changed after the token was created)
+  # NEVER commit real values here — config.yaml is gitignored, this example
+  # file is not.
+  x:
+    api_key: xxxxxxxxxxxxxxxxxxxxxxxxx
+    api_secret: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+    access_token: xxxxxxxxxx-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+    access_token_secret: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 # Used by `biz-tools crawl` (SerpApi — Google search results via API, not scraping)
 # Get a key: https://serpapi.com (free tier: 250 searches/month)

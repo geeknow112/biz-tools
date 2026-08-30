@@ -19,6 +19,14 @@ type PlatformConfig struct {
 	URL         string `yaml:"url"`
 	Username    string `yaml:"username"`
 	AppPassword string `yaml:"app_password"`
+
+	// X (Twitter) API v2 credentials — OAuth 1.0a User Context.
+	// Generate these in the X Developer Portal (App settings > Keys and
+	// tokens) after enabling OAuth 1.0a with Read and Write permissions.
+	APIKey            string `yaml:"api_key"`
+	APISecret         string `yaml:"api_secret"`
+	AccessToken       string `yaml:"access_token"`
+	AccessTokenSecret string `yaml:"access_token_secret"`
 }
 
 type CrawlConfig struct {
