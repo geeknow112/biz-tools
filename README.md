@@ -14,6 +14,8 @@ biz-tools/
 │   ├── config.go    # config.yaml 読み込み (Config/PlatformConfig/CrawlConfig/OutreachConfig)
 │   ├── media.go     # mediaサブコマンド (draft, publish)
 │   ├── wp.go        # WordPress REST API連携 (media publish -p wordpress用)
+│   ├── x.go         # X API v2連携 (media post -p x用、即時投稿)
+│   ├── oauth1.go    # OAuth 1.0a署名 (RFC 5849, 標準ライブラリのみで実装)
 │   ├── scan.go      # セキュリティ簡易診断 (単体 / --batch)
 │   ├── crawl.go     # Google Custom Search APIでの見込みサイト発見
 │   └── outreach.go  # 問い合わせフォーム経由の営業DM (要承認)
@@ -34,7 +36,8 @@ biz-tools              ← rootCmd (cmd/root.go)
 │   └── history        ← outreachHistoryCmd
 ├── media              ← mediaCmd (cmd/media.go)
 │   ├── draft          ← mediaDraftCmd
-│   └── publish        ← mediaPublishCmd
+│   ├── publish        ← mediaPublishCmd
+│   └── post           ← mediaPostCmd (cmd/x.go) ★即時投稿(PRなし、現状X専用)
 ├── video              ← (予定)
 └── fba                ← (予定)
 ```
@@ -138,9 +141,60 @@ biz-tools media draft article.md -p zenn
 biz-tools media publish article.md -p zenn
 ```
 
-## 対応プラットフォーム (予定)
+### media post - X (Twitter) への即時投稿
 
-- **media**: Zenn, Qiita, note, WordPress, X
+Zenn/Qiita/WordPressの`draft`/`publish`はGitHubのPRレビューを経由しますが、
+Xは投稿した瞬間に公開される即時性のメディアなのでPRフローに馴染みません。
+そのため`media post`という別サブコマンドにしています。
+
+```bash
+# 投稿内容と文字数を確認するだけ（実際には投稿しない）
+biz-tools media post tweet.md -p x --dry-run
+
+# 実際に投稿
+biz-tools media post tweet.md -p x
+
+# 280文字を超える場合、--threadを付けると自動でスレッド分割して連続投稿する
+# （付けない場合はエラーで停止する）
+biz-tools media post long-post.md -p x --thread
+```
+
+- 本文はMarkdownファイルをプレーンテキストとして読み込みます（改行以外の変換はしません）。
+- 文字数カウントはXの重み付けルールの簡易近似です。URLは実際の長さに関わらず23文字（t.co短縮後の長さ）として計算し、日本語などの全角文字は1文字=2としてカウントします。ただし公式の`twitter-text`アルゴリズムの全エッジケースを再現したものではありません。
+- `--thread`指定時は単語境界で分割し、各投稿末尾に`(1/3)`のような通し番号を付け、`reply.in_reply_to_tweet_id`で前の投稿への返信として連続投稿します。
+- 認証はOAuth 1.0a User Context（API Key/Secret + Access Token/Secret の4値）。取得方法は下記「Xの認証情報を取得する」を参照してください。
+
+#### Xの認証情報を取得する
+
+1. [X Developer Portal](https://developer.x.com/) でアプリを作成する
+2. アプリの **User authentication settings** で OAuth 1.0a を有効化し、権限を **Read and Write** にする
+3. **Keys and tokens** タブで以下を取得する
+   - API Key / API Key Secret（Consumer Keys）
+   - Access Token / Access Token Secret（アプリ作成後に生成。権限をRead and Writeに変更した場合は再生成が必要）
+4. `config.yaml`（`config.yaml.example`をコピーして作成、**Gitにはコミットしない**）に設定する
+
+```yaml
+platforms:
+  x:
+    api_key: "取得したAPI Key"
+    api_secret: "取得したAPI Key Secret"
+    access_token: "取得したAccess Token"
+    access_token_secret: "取得したAccess Token Secret"
+```
+
+#### 料金・投稿上限（2026年8月時点）
+
+X APIは2026年2月以降、新規開発者向けの無料枠（Free tier）が廃止され、**従量課金（pay-per-use）** に一本化されています。
+
+- 無料枠：新規アカウントには提供されていません（クレジット購入が必須）
+- 投稿コスト：プレーンテキスト/画像付き投稿 $0.015/件、URLを含む投稿 $0.20/件
+- 旧無料枠（2026年2月より前に発行されたアカウントで移行前の場合）：月1,500投稿、24時間あたり50件程度が目安値でしたが、現在は新規発行されていません
+- 現在の正確な料金・上限は [X Developer Portal](https://developer.x.com/en/portal/products) のダッシュボードで自分のアカウントの状態を必ず確認してください（アカウントの作成時期によって条件が異なる場合があります）
+
+## 対応プラットフォーム
+
+- **media draft/publish**（PRレビュー経由）: Zenn, Qiita, note, WordPress
+- **media post**（即時投稿）: X
 - **video**: Udemy動画作成ワークフロー
 - **fba**: Keepa連携、商品検索
 

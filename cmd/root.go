@@ -19,7 +19,8 @@ var rootCmd = &cobra.Command{
 	Long: `biz-tools is a CLI tool for automating business workflows.
 
 Available commands:
-  media  - Media publishing (Zenn, Qiita, note, WordPress, X)
+  media  - Media publishing: draft/publish via PR (Zenn, Qiita, note, WordPress),
+           post immediately (X)
   video  - Video creation workflow
   fba    - FBA product search and operations`,
 	Run: func(cmd *cobra.Command, args []string) {
