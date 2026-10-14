@@ -95,12 +95,13 @@ func runDraft(file, platform string) error {
 	}
 	defer os.Chdir(originalDir)
 
-	// 5. Get current branch (base)
-	baseBranch, err := gitCommand("rev-parse", "--abbrev-ref", "HEAD")
+	// 5. Switch to the up-to-date default branch (base).
+	// The current branch must not be used as the base: if the article repo is
+	// left on a work branch, the draft PR would target that branch.
+	baseBranch, err := prepareBaseBranch(gitCommand)
 	if err != nil {
-		return fmt.Errorf("failed to get current branch: %w", err)
+		return err
 	}
-	baseBranch = strings.TrimSpace(baseBranch)
 
 	// 6. Generate branch name
 	timestamp := time.Now().Format("20060102-150405")
@@ -174,6 +175,34 @@ func platformDestPath(platform, file string) string {
 	default:
 		return filepath.Base(file)
 	}
+}
+
+// prepareBaseBranch checks out the default branch of the current repository
+// (origin/HEAD, or "main" if it is not set) and pulls it, then returns its name.
+// It stops without changing anything if the working tree has uncommitted changes.
+func prepareBaseBranch(git func(args ...string) (string, error)) (string, error) {
+	status, err := git("status", "--porcelain")
+	if err != nil {
+		return "", fmt.Errorf("failed to get git status: %w", err)
+	}
+	if strings.TrimSpace(status) != "" {
+		return "", fmt.Errorf("the article repo has uncommitted changes; commit or discard them first:\n%s", status)
+	}
+
+	base := "main"
+	if ref, err := git("symbolic-ref", "--short", "refs/remotes/origin/HEAD"); err == nil {
+		if name := strings.TrimPrefix(strings.TrimSpace(ref), "origin/"); name != "" {
+			base = name
+		}
+	}
+
+	if _, err := git("checkout", base); err != nil {
+		return "", fmt.Errorf("failed to checkout %s: %w", base, err)
+	}
+	if _, err := git("pull", "--ff-only", "origin", base); err != nil {
+		return "", fmt.Errorf("failed to update %s: %w", base, err)
+	}
+	return base, nil
 }
 
 func gitCommand(args ...string) (string, error) {
